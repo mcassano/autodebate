@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 130" width="160" height="130">
+  <!-- steam -->
+  <g fill="none" stroke="#9c7a56" stroke-width="5" stroke-linecap="round" opacity="0.6">
+    <path d="M62 8c-4 6 4 10 0 16"/>
+    <path d="M80 4c-4 6 4 10 0 16"/>
+    <path d="M98 8c-4 6 4 10 0 16"/>
+  </g>
+  <!-- cup -->
+  <g fill="none" stroke="#b0825a" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M42 40h76v34c0 16-13 28-30 28h-16c-17 0-30-12-30-28V40z"/>
+    <path d="M118 48h8c10 0 16 6 16 14s-6 14-16 14h-9"/>
+    <path d="M30 112h100"/>
+  </g>
+</svg>

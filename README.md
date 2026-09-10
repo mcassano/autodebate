@@ -1,12 +1,8 @@
-```
-        (  )   (  )
-       )  (   )  (
-      .-------------.
-      |  autodebate |]
-      '-------------'
-   strong coffee ·
-   stronger opinions
-```
+<p align="center">
+  <img src="docs/logo.svg" alt="autodebate — a steaming coffee cup" width="150">
+</p>
+
+<h3 align="center">strong coffee · stronger opinions</h3>
 
 **Three of the world's best AI models sit at a coffee-shop table and argue — with live web access, real personas, and a chair waiting for you.**
 
