@@ -134,14 +134,17 @@ straight), then `--personas path/to/pack.json`.
 
 ## A taste
 
-Opening message: *"What will matter most in 2050 that almost nobody is preparing for?"*
-(trimmed for length — full sessions land in `transcripts/`)
+```bash
+autodebate --personas traders --mode funny "NVDA at all-time highs. Buying, selling, or hiding?"
+```
 
-> **Priya:** The overlooked constraint in 2050 won't be generating things — it'll be proving things. Once synthesis is free, every photo, log, signature, and sensor stream becomes an adversarial product. The entire trust stack — courts, insurance, title, food safety — still assumes a document is evidence. That assumption quietly fails…
+> **Rico** *(tape-reading scalper)*: You're mistaking the granary for the grain. NVDA doesn't clear at a price, it clears like a ration line — hyperscalers pay upfront, sovereigns cut the queue… I'm not shorting a cartel, and I'm not paying 218 for a red grain ticket at the top of a vertical. If it prints 221 with offers thin, I buy the breakout and let the pharaoh pay me rent.
 >
-> **Marcus:** …the implied golden age is what I won't grant. PCAOB inspections find deficiencies in something like 40% of the audits they pull, and that's credentialed CPAs with statutory authority. "Cryptographically perfect proof of a false event, issued at scale for a fee" isn't the 2050 failure mode; it's the 2008 business model, and it didn't need a single generative model to work…
+> **Maggie** *(macro trader)*: The pharaoh's been paying for grain with IOUs written against next year's harvest. A ration line where the customers are levered isn't a cartel, it's vendor financing with extra steps… Your scarcity premium doesn't die when a second granary opens — it dies when the guys in line discover their credit card was declined.
 >
-> **Kaito:** …Every sensor is a *claim generator*, and hostile parties don't have to defeat your measurement — they just have to flood it. GPS spoofing near conflict zones is already disrupting over a thousand civil flights a day… The actual 2050 bottleneck is adversarially robust ground truth at scale — a measurement problem, a physics problem, and an institutional design problem all at once.
+> **Wren** *(systematic quant)*: You didn't buy a shovel, you bought the most violently cyclical commodity in technology at the exact moment the trade became a magazine cover… Rico's granary and her credit card are the same position. Both are long one thing: that 2026 capex is a physical constant.
+
+Each seat is a different model — DeepSeek, Claude, and Qwen — prompted to disagree, pulling live market data as they go. Full sessions land in `transcripts/`.
 
 ## How it works
 
