@@ -62,7 +62,7 @@ async def _brave_search(args: dict[str, Any]) -> str:
         return "Empty query."
     async with httpx.AsyncClient(timeout=20) as client:
         r = await client.get(
-            "https://api.search.brave.com/app/v1/web/search",
+            "https://api.search.brave.com/res/v1/web/search",
             headers={"X-Subscription-Token": BRAVE_KEY, "Accept": "application/json"},
             params={"q": query, "count": 5},
         )

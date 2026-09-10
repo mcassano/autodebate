@@ -1,0 +1,16 @@
+name: ci
+
+on: [push, pull_request]
+
+jobs:
+  lint-and-import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv pip install --system -e ".[dev]"
+      - run: ruff check . && ruff format --check .
+      - name: Package imports cleanly
+        run: python -c "import autodebate.cli, autodebate.tui, autodebate.web"
+      - name: Persona packs are well-formed
+        run: python tests/test_packs.py

@@ -18,7 +18,6 @@ from openai import AsyncOpenAI
 
 from . import prompts
 from .config import (
-    BY_NAME,
     MAX_CONSEC_PASSES,
     MODERATOR_MODEL,
     PERSONAS,
@@ -67,12 +66,12 @@ class TranscriptLog:
     """Appends the conversation to transcripts/debate-<ts>.md as it happens,
     so the record survives closing the app (or a crash)."""
 
-    def __init__(self) -> None:
+    def __init__(self, personas: tuple[Persona, ...] = PERSONAS) -> None:
         out_dir = Path("transcripts")
         out_dir.mkdir(exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         self.path = out_dir / f"debate-{stamp}.md"
-        roster = " · ".join(f"{p.name} ({p.model})" for p in PERSONAS)
+        roster = " · ".join(f"{p.name} ({p.model})" for p in personas)
         self._write(f"# Coffee Shop Debate — {datetime.now():%Y-%m-%d %H:%M}\n\n{roster}\n\n---\n")
 
     def _write(self, text: str) -> None:
@@ -90,8 +89,20 @@ class TranscriptLog:
 
 
 class Engine:
-    def __init__(self, sink: Sink, max_turns: int | None = None, exit_on_cap: bool = False):
+    def __init__(
+        self,
+        sink: Sink,
+        max_turns: int | None = None,
+        exit_on_cap: bool = False,
+        personas: tuple[Persona, ...] = PERSONAS,
+        moderator_model: str = MODERATOR_MODEL,
+        brief: str | None = None,
+    ):
         self.sink = sink
+        self.personas = personas
+        self.by_name = {p.name: p for p in personas}
+        self.moderator_model = moderator_model
+        self.brief = brief
         self.transcript: list[Entry] = []
         self.user_queue: asyncio.Queue[str] = asyncio.Queue()
         self.running = asyncio.Event()  # set = talking, clear = paused
@@ -105,7 +116,7 @@ class Engine:
         self.summary_upto = 0  # transcript index covered by the summary
         self.last_speaker: str | None = None
         self.tools_disabled: set[str] = set()  # persona names whose models reject tools
-        self.log = TranscriptLog()
+        self.log = TranscriptLog(personas)
         self._clients: dict[str, AsyncOpenAI] = {}
         self._streamed_any = False  # set per attempt: did any text reach the UI?
 
@@ -173,7 +184,7 @@ class Engine:
                 await self._silence()
                 continue
 
-            persona = BY_NAME[nxt]
+            persona = self.by_name[nxt]
             if nudge:
                 await self.sink.dim(f"☕ moderator → {nxt}: {nudge}")
 
@@ -221,8 +232,8 @@ class Engine:
     async def _moderator_pick(self) -> tuple[str | None, str | None]:
         """→ (next speaker or None for silence, optional one-line nudge)."""
         recent = "\n".join(f"{e.speaker}: {e.text}" for e in self.transcript[-12:])
-        prompt = prompts.moderator_prompt(recent, self.last_speaker)
-        provider, model = parse_spec(MODERATOR_MODEL)
+        prompt = prompts.moderator_prompt(recent, self.last_speaker, self.personas, self.brief)
+        provider, model = parse_spec(self.moderator_model)
         r = await self._client(provider).chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompt}],
@@ -232,7 +243,7 @@ class Engine:
         self._count_usage(r.usage)
         content = (r.choices[0].message.content or "").strip()
 
-        names = BY_NAME.keys()
+        names = self.by_name.keys()
         nxt: str | None = None
         nudge: str | None = None
         found_next = False
@@ -252,7 +263,7 @@ class Engine:
         return nxt, nudge
 
     def _least_recent_speaker(self) -> str:
-        last_seen = {p.name: -1 for p in PERSONAS}
+        last_seen = {p.name: -1 for p in self.personas}
         for i, e in enumerate(self.transcript):
             if e.speaker in last_seen:
                 last_seen[e.speaker] = i
@@ -307,29 +318,34 @@ class Engine:
             finish = None
             round_text: list[str] = []
 
-            async for chunk in stream:
-                usage = getattr(chunk, "usage", None)
-                if usage:
-                    self._count_usage(usage)
-                if not chunk.choices:
-                    continue
-                choice = chunk.choices[0]
-                delta = choice.delta
-                if delta and delta.content:
-                    self._streamed_any = True
-                    round_text.append(delta.content)
-                    await self.sink.token(delta.content)
-                for tc in (delta.tool_calls if delta else None) or []:
-                    slot = tool_calls.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
-                    if tc.id:
-                        slot["id"] += tc.id
-                    if tc.function:
-                        if tc.function.name:
-                            slot["name"] += tc.function.name
-                        if tc.function.arguments:
-                            slot["arguments"] += tc.function.arguments
-                if choice.finish_reason:
-                    finish = choice.finish_reason
+            try:
+                async for chunk in stream:
+                    usage = getattr(chunk, "usage", None)
+                    if usage:
+                        self._count_usage(usage)
+                    if not chunk.choices:
+                        continue
+                    choice = chunk.choices[0]
+                    delta = choice.delta
+                    if delta and delta.content:
+                        self._streamed_any = True
+                        round_text.append(delta.content)
+                        await self.sink.token(delta.content)
+                    for tc in (delta.tool_calls if delta else None) or []:
+                        slot = tool_calls.setdefault(
+                            tc.index, {"id": "", "name": "", "arguments": ""}
+                        )
+                        if tc.id:
+                            slot["id"] += tc.id
+                        if tc.function:
+                            if tc.function.name:
+                                slot["name"] += tc.function.name
+                            if tc.function.arguments:
+                                slot["arguments"] += tc.function.arguments
+                    if choice.finish_reason:
+                        finish = choice.finish_reason
+            finally:
+                await stream.close()  # don't leave an async generator for the GC
 
             all_text.extend(round_text)
 
@@ -373,6 +389,8 @@ class Engine:
         try:
             return await tool.run(args)
         except Exception as e:
+            # the model hears the failure — and so does the human eavesdropping
+            await self.sink.dim(f"{tool.icon} {name} failed: {short_error(e)}")
             return f"{name} failed: {e}"
 
     def _build_messages(self, persona: Persona, nudge: str | None) -> list[dict]:
@@ -382,7 +400,8 @@ class Engine:
         become `user` lines prefixed "Name: " (consecutive ones merged, since some
         providers require role alternation).
         """
-        msgs: list[dict] = [{"role": "system", "content": prompts.persona_prompt(persona)}]
+        system = prompts.persona_prompt(persona, self.personas)
+        msgs: list[dict] = [{"role": "system", "content": system}]
         start = max(self.summary_upto, len(self.transcript) - WINDOW_TURNS)
         if self.summary:
             msgs.append(
@@ -419,7 +438,7 @@ class Engine:
         cutoff = len(self.transcript) - WINDOW_TURNS
         older = self.transcript[self.summary_upto : cutoff]
         convo = "\n".join(f"{e.speaker}: {e.text}" for e in older)
-        provider, model = parse_spec(MODERATOR_MODEL)
+        provider, model = parse_spec(self.moderator_model)
         r = await self._client(provider).chat.completions.create(
             model=model,
             messages=[{"role": "user", "content": prompts.summary_prompt(self.summary, convo)}],

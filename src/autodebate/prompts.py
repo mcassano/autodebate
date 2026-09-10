@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from textwrap import dedent
 
-from .config import PERSONAS, Persona
+from .config import Persona
 from .tools import TOOLS
 
 CORE_PROMPT = dedent("""\
@@ -38,24 +38,30 @@ CORE_PROMPT = dedent("""\
     human at your table.""")
 
 
-def persona_prompt(persona: Persona) -> str:
+def persona_prompt(persona: Persona, roster: tuple[Persona, ...]) -> str:
     """System prompt for one persona, introducing the other seats by name and style."""
-    others = "; ".join(f"{p.name} ({p.style})" for p in PERSONAS if p is not persona)
+    others = "; ".join(f"{p.name} ({p.style})" for p in roster if p is not persona)
     tools = ", ".join(f"{t.name} ({t.hint})" for t in TOOLS)
     return CORE_PROMPT.format(
         name=persona.name, others=others, archetype=persona.archetype, tools=tools
     )
 
 
-def moderator_prompt(recent: str, last_speaker: str | None) -> str:
+def moderator_prompt(
+    recent: str,
+    last_speaker: str | None,
+    roster: tuple[Persona, ...],
+    brief: str | None = None,
+) -> str:
     """The invisible moderator decides who speaks next, and whispers a nudge."""
-    names = ", ".join(p.name for p in PERSONAS)
+    names = ", ".join(p.name for p in roster)
+    format_line = f"Table format: {brief}\n\n" if brief else ""
     return dedent(f"""\
         You are the invisible moderator of a coffee-shop conversation between {names}
         and a human (shown as "You"). Their shared goal: rigorous, challenging
         discussion that expands horizons and explores the future.
 
-        Recent conversation:
+        {format_line}Recent conversation:
         {recent}
 
         Pick who speaks next. Rules:

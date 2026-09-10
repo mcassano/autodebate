@@ -16,7 +16,7 @@ from textual.binding import Binding
 from textual.containers import VerticalScroll
 from textual.widgets import Footer, Header, Input, Static
 
-from .config import PERSONAS, Persona
+from .config import MODERATOR_MODEL, PERSONAS, Lineup, Persona
 from .engine import Engine
 
 
@@ -70,8 +70,6 @@ class TuiSink:
 
 
 class DebateApp(App):
-    TITLE = "coffee shop — " + " · ".join(p.name for p in PERSONAS)
-
     CSS = """
     #chat { height: 1fr; padding: 1 2 0 2; }
     #status { height: 1; padding: 0 2; background: $surface; color: $text-muted; }
@@ -86,10 +84,17 @@ class DebateApp(App):
         Binding("ctrl+q", "quit_app", "Quit"),
     ]
 
-    def __init__(self, max_turns: int | None = None, opening: str | None = None):
+    def __init__(
+        self,
+        max_turns: int | None = None,
+        opening: str | None = None,
+        lineup: Lineup | None = None,
+    ):
         super().__init__()
         self._max_turns = max_turns
         self._opening = opening
+        self._lineup = lineup or Lineup(PERSONAS)
+        self.title = "coffee shop — " + " · ".join(p.name for p in self._lineup.personas)
         self._current: Speech | None = None
         self._status_text = ""
         self.engine: Engine | None = None
@@ -106,7 +111,13 @@ class DebateApp(App):
 
     def on_mount(self) -> None:
         self.chat = self.query_one(ChatView)
-        self.engine = Engine(TuiSink(self), max_turns=self._max_turns)
+        self.engine = Engine(
+            TuiSink(self),
+            max_turns=self._max_turns,
+            personas=self._lineup.personas,
+            moderator_model=self._lineup.moderator or MODERATOR_MODEL,
+            brief=self._lineup.brief,
+        )
         self._engine_task = asyncio.create_task(self.engine.run())
         self.add_line(
             "☕ Three minds settle in with their coffee. The table is quiet — "

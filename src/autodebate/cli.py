@@ -8,7 +8,15 @@ import asyncio
 from rich.console import Console
 from rich.markup import escape
 
-from .config import DEFAULT_TOPIC, Persona, check_keys
+from .config import (
+    DEFAULT_TOPIC,
+    MODERATOR_MODEL,
+    Lineup,
+    Persona,
+    available_packs,
+    check_keys,
+    load_personas,
+)
 from .engine import Engine
 
 
@@ -38,9 +46,16 @@ class CliSink:
         self.console.print(f"[bold red]⚠ {escape(text)}[/]")
 
 
-async def run_cli(topic: str, turns: int) -> None:
+async def run_cli(topic: str, turns: int, lineup: Lineup) -> None:
     sink = CliSink()
-    engine = Engine(sink, max_turns=turns, exit_on_cap=True)
+    engine = Engine(
+        sink,
+        max_turns=turns,
+        exit_on_cap=True,
+        personas=lineup.personas,
+        moderator_model=lineup.moderator or MODERATOR_MODEL,
+        brief=lineup.brief,
+    )
     sink.console.print(f"[dim]logging to {engine.log.path}[/]")
     engine.submit_user(topic)
     try:
@@ -63,16 +78,36 @@ def main() -> None:
         default=None,
         help="auto-pause the TUI after N AI turns (default: unlimited)",
     )
+    ap.add_argument(
+        "--personas",
+        metavar="PACK",
+        help="persona pack: a built-in name (see --packs) or a path to a JSON pack",
+    )
+    ap.add_argument("--packs", action="store_true", help="list built-in persona packs and exit")
     args = ap.parse_args()
 
-    check_keys()
+    if args.packs:
+        print("Built-in persona packs:")
+        for name in available_packs():
+            lineup = load_personas(name)
+            seats = ", ".join(p.name for p in lineup.personas)
+            print(f"  {name:12s} {seats}")
+        print("\nUse one with: autodebate --personas NAME — or pass a path to your own JSON pack.")
+        return
+
+    lineup = load_personas(args.personas)
+    check_keys(lineup.personas, lineup.moderator or MODERATOR_MODEL)
 
     if args.cli:
-        asyncio.run(run_cli(args.topic or DEFAULT_TOPIC, args.turns))
+        asyncio.run(run_cli(args.topic or DEFAULT_TOPIC, args.turns, lineup))
     else:
         from .tui import DebateApp  # defer textual import in --cli mode
 
-        DebateApp(max_turns=args.max_turns, opening=args.topic).run()
+        DebateApp(
+            max_turns=args.max_turns,
+            opening=args.topic,
+            lineup=lineup,
+        ).run()
 
 
 if __name__ == "__main__":

@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.0 — 2026-09-10
+
+Persona packs, plus fixes from a day of real use.
+
+- **Persona packs**: recast the table with `--personas NAME` (or a path to a
+  JSON pack, or `AUTODEBATE_PERSONAS` for web deploys). Five built-ins:
+  `stoics`, `boardroom`, `lab`, `arena`, `locals` (fully local Ollama).
+  Packs can override the moderator model and set a one-line `brief` that
+  tells the moderator the table's format — `arena` uses it to keep the
+  prosecutor/defender/judge on their assigned sides.
+- **Fix: Brave Search actually works now.** The API path was wrong
+  (`/app/v1/` → `/res/v1/`); searches were silently failing and the personas
+  were gracefully covering for it. Tool failures are now also shown to the
+  human, not just the model.
+- Fix: streaming responses are explicitly closed (no more async-generator
+  warnings on exit).
+- Pack validation: `tests/test_packs.py` checks every built-in pack with no
+  API calls.
+
 ## 0.1.0 — 2026-09-10
 
 First public release.

@@ -23,7 +23,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from .config import PERSONAS, Persona, check_keys
+from .config import MODERATOR_MODEL, PERSONAS, Lineup, Persona, check_keys, load_personas
 from .engine import Engine
 
 STATIC = Path(__file__).parent / "static"
@@ -86,10 +86,19 @@ class WebSink:
         await self.hub.broadcast({"type": "error", "text": text})
 
 
-def create_app() -> FastAPI:
+def create_app(lineup: Lineup | None = None) -> FastAPI:
+    if lineup is None and os.environ.get("AUTODEBATE_PERSONAS"):
+        lineup = load_personas(os.environ["AUTODEBATE_PERSONAS"])
+    lineup = lineup or Lineup(PERSONAS)
+    check_keys(lineup.personas, lineup.moderator or MODERATOR_MODEL)
     hub = Hub()
     sink = WebSink(hub)
-    engine = Engine(sink)
+    engine = Engine(
+        sink,
+        personas=lineup.personas,
+        moderator_model=lineup.moderator or MODERATOR_MODEL,
+        brief=lineup.brief,
+    )
     sink.engine = engine
 
     @asynccontextmanager
@@ -126,7 +135,7 @@ def create_app() -> FastAPI:
             "paused": not engine.running.is_set(),
             "personas": [
                 {"name": p.name, "color": p.color, "model": p.model, "style": p.style}
-                for p in PERSONAS
+                for p in lineup.personas
             ],
         }
 
@@ -168,7 +177,6 @@ app = create_app()
 
 
 def main() -> None:
-    check_keys()
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "8000")))

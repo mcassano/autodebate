@@ -12,9 +12,11 @@ Model specs are "provider:model-id" (or bare "model-id", which means OpenRouter)
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -129,21 +131,88 @@ def key_for(key_env: str) -> str:
     return os.environ.get(key_env, "")
 
 
-def _required_key_envs() -> set[str]:
+def _required_key_envs(
+    personas: tuple[Persona, ...] = PERSONAS, moderator: str = MODERATOR_MODEL
+) -> set[str]:
     """Keys for the providers actually referenced by the lineup — nothing more."""
     required = set()
-    for spec in [p.model for p in PERSONAS] + [MODERATOR_MODEL]:
+    for spec in [p.model for p in personas] + [moderator]:
         key_env = PROVIDERS[parse_spec(spec)[0]].key_env
         if key_env:
             required.add(key_env)
     return required
 
 
-def check_keys() -> None:
+def check_keys(personas: tuple[Persona, ...] = PERSONAS, moderator: str = MODERATOR_MODEL) -> None:
     """Fail fast on the one thing that's truly required: an LLM provider.
 
     BRAVE_SEARCH_API_KEY is optional — without it the table simply debates
     without live web search (the five other tools still work)."""
-    missing = [k for k in sorted(_required_key_envs()) if not _key_present(k)]
+    missing = [k for k in sorted(_required_key_envs(personas, moderator)) if not _key_present(k)]
     if missing:
         sys.exit(f"Missing keys: {', '.join(missing)} — add them to .env and try again.")
+
+
+# ---------------------------------------------------------------- persona packs
+
+PACKS_DIR = Path(__file__).parent / "packs"
+COLOR_ROTATION = ("cyan", "magenta", "yellow", "green", "blue", "red")
+
+
+@dataclass(frozen=True)
+class Lineup:
+    """A resolved table: who sits at it, an optional moderator-model override,
+    and an optional one-line brief telling the moderator the table's format
+    (e.g. assigned sides) so its nudges reinforce the format instead of
+    dissolving it."""
+
+    personas: tuple[Persona, ...]
+    moderator: str | None = None
+    brief: str | None = None
+
+
+def available_packs() -> list[str]:
+    """Names of the packs shipped in autodebate/packs/ (without .json)."""
+    return sorted(p.stem for p in PACKS_DIR.glob("*.json"))
+
+
+def load_personas(spec: str | None) -> Lineup:
+    """Resolve a lineup: None → the default trio; a built-in pack name
+    ("stoics"); or a path to a JSON pack file.
+
+    Exits with a clear message on any problem — a pack should never fail
+    mysteriously."""
+    if spec is None:
+        return Lineup(PERSONAS)
+
+    path = Path(spec) if (spec.endswith(".json") or "/" in spec) else PACKS_DIR / f"{spec}.json"
+    if not path.exists():
+        sys.exit(f"No persona pack at {path} — built-in packs: {', '.join(available_packs())}")
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        raw = data["personas"]
+        if not 2 <= len(raw) <= 6:
+            raise ValueError("a table needs 2–6 personas")
+        personas = tuple(
+            Persona(
+                name=p["name"],
+                model=p["model"],
+                color=p.get("color") or COLOR_ROTATION[i % len(COLOR_ROTATION)],
+                style=p["style"],
+                archetype=p["archetype"],
+            )
+            for i, p in enumerate(raw)
+        )
+        names = [p.name for p in personas]
+        if len(set(names)) != len(names):
+            raise ValueError(f"duplicate persona names: {', '.join(names)}")
+        lineup = Lineup(
+            personas=personas,
+            moderator=data.get("moderator"),
+            brief=data.get("brief"),
+        )
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
+        sys.exit(f"Invalid persona pack {path}: {e}")
+
+    return lineup

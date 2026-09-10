@@ -111,6 +111,29 @@ model = "openai:gpt-6-astra"  # OpenAI direct (OPENAI_API_KEY)
 Only the keys for providers actually in use are required. Models that can't do
 tool calling are detected at runtime and simply debate without tools.
 
+## Persona packs
+
+Recast the whole table with one flag. Five packs ship in the box
+(`autodebate --packs` to list):
+
+| Pack | Seats | The chemistry |
+|------|-------|---------------|
+| `stoics` | Aurelia · Nikos · Selene | Stoic, Cynic, and Epicurean argue about how to live now |
+| `boardroom` | David · Vera · Juno | CFO, growth operator, and product visionary stress-test ideas like it's their money |
+| `lab` | Elena · Ravi · Moss | Theorist, experimentalist, and ML-systems skeptic on how science actually moves |
+| `arena` | Rhea · Theo · Sol | Prosecutor, defender, and judge — table a motion, watch it get tested on assigned sides |
+| `locals` | Ada · Bram · Cleo | Runs entirely on local Ollama models — free, private, offline |
+
+```bash
+autodebate --personas arena "Motion: this house believes remote work has failed."
+AUTODEBATE_PERSONAS=stoics autodebate-web
+```
+
+Write your own as JSON (name, model spec, style, archetype per seat; color
+optional; `moderator` and `brief` optional — `brief` is a one-line note to the
+moderator about the table's format, which is how `arena` keeps its sides
+straight), then `--personas path/to/pack.json`.
+
 ## A taste
 
 Opening message: *"What will matter most in 2050 that almost nobody is preparing for?"*
@@ -132,21 +155,22 @@ Opening message: *"What will matter most in 2050 that almost nobody is preparing
 
 ```
 src/autodebate/
-  config.py     # personas, providers, constants — start here
+  config.py     # personas, providers, pack loading — start here
   prompts.py    # every word spoken to the models
   engine.py     # the conversation loop (UI-agnostic, drives a Sink)
   tools.py      # the six tools; add your own in ~15 lines
+  packs/        # persona packs (stoics, boardroom, lab, arena, locals)
   tui.py        # Textual front end
   cli.py        # headless stdout front end
   web.py        # FastAPI front end + WebSocket hub
   static/       # the café (no build step)
-tests/          # smoke tests for all three front ends
+tests/          # smoke tests for all three front ends + pack validation
 ```
 
 ## Roadmap ideas
 
 - **The café, properly**: an overhead view of a whole coffee shop with many tables — different personas and topics at each — and you sit down at the one that sounds interesting. Bigger than v1, but it's the direction.
-- Persona packs (`--personas stoics.json`) · free-for-all turn-taking mode · dollar cost meter · audience polls · letting the table invite a guest model mid-debate.
+- Free-for-all turn-taking mode · dollar cost meter · audience polls · letting the table invite a guest model mid-debate · more packs (the bar for a new one: a chemistry the default trio can't produce).
 
 ## Contributing
 
