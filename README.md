@@ -175,8 +175,10 @@ tests/          # smoke tests for all three front ends + pack validation
 
 ## Contributing
 
-Issues and PRs welcome. Keep the engine UI-agnostic, keep it `ruff` clean
-(`ruff check --fix . && ruff format .`), and keep personas challenging.
+Issues and PRs welcome. Run `./ci.sh` before pushing — it's the exact script
+GitHub Actions runs (ruff, keyless imports, pack validation), and
+`./ci.sh --with-api` adds the live smoke tests. Keep the engine UI-agnostic,
+and keep personas challenging.
 
 ## License
 

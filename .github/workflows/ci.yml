@@ -9,8 +9,4 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - run: uv venv && uv pip install -e ".[dev]"
-      - run: uv run ruff check . && uv run ruff format --check .
-      - name: Package imports cleanly
-        run: uv run python -c "import autodebate.cli, autodebate.tui, autodebate.web"
-      - name: Persona packs are well-formed
-        run: uv run python tests/test_packs.py
+      - run: ./ci.sh

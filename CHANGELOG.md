@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.1 — 2026-09-10
+
+Tooling only, no app changes.
+
+- `./ci.sh` runs every CI check locally (ruff, keyless imports, pack
+  validation; `--with-api` adds the live smoke tests). GitHub Actions now
+  calls the same script, so local and CI can't drift.
+- Commits are signed (SSH) and show Verified on GitHub.
+- README: SVG cup logo replaces the ASCII block; new "A taste" excerpt from
+  the funny traders table.
+
 ## 0.3.0 — 2026-09-10
 
 Registers, pacing, and a table of traders.
