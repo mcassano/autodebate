@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>autodebate café</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="cup">☕<span class="steam s1">~</span><span class="steam s2">~</span></span>
+      <h1>autodebate café</h1>
+    </div>
+    <div class="header-right">
+      <span id="conn" class="conn">connecting…</span>
+      <span id="tokens" class="tokens">0 tokens</span>
+      <button id="pause" title="pause/resume the conversation">⏸ pause</button>
+    </div>
+  </header>
+
+  <div id="seats" class="seats"></div>
+  <div id="status" class="status">the table waits for you</div>
+
+  <main id="chat" class="chat"></main>
+
+  <form id="speak" class="speak">
+    <input id="note" autocomplete="off" placeholder="Pass a note to the table…" />
+    <button type="submit">send</button>
+  </form>
+
+  <footer>
+    <span>eavesdropping on three minds · <a href="/transcript" target="_blank">transcript</a></span>
+    <span id="queued"></span>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
