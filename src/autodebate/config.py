@@ -114,6 +114,22 @@ MAX_CONSEC_PASSES = 3  # table falls silent after this many passes in a row
 
 DEFAULT_TOPIC = "What will matter most in 2050 that almost nobody is preparing for?"
 
+# The two dials. Mode = the table's register (prompt text lives in prompts.MODES).
+# Speed = the dramatic beat between a finished turn and the next speaker.
+MODE_NAMES = ("debate", "casual", "funny")
+SPEED_DELAYS = {"fast": 0.0, "medium": 2.5, "slow": 8.0}
+DEFAULT_MODE = "debate"
+DEFAULT_SPEED = "medium"
+
+
+def check_dials(mode: str, speed: str) -> None:
+    """Validate mode/speed coming from env vars (argparse covers CLI flags)."""
+    if mode not in MODE_NAMES:
+        sys.exit(f"Unknown mode {mode!r} — pick from {', '.join(MODE_NAMES)}")
+    if speed not in SPEED_DELAYS:
+        sys.exit(f"Unknown speed {speed!r} — pick from {', '.join(SPEED_DELAYS)}")
+
+
 OPENROUTER_KEY = os.environ.get("OPEN_ROUTER_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
 BRAVE_KEY = os.environ.get("BRAVE_SEARCH_API_KEY")
 
@@ -161,14 +177,15 @@ COLOR_ROTATION = ("cyan", "magenta", "yellow", "green", "blue", "red")
 
 @dataclass(frozen=True)
 class Lineup:
-    """A resolved table: who sits at it, an optional moderator-model override,
-    and an optional one-line brief telling the moderator the table's format
-    (e.g. assigned sides) so its nudges reinforce the format instead of
-    dissolving it."""
+    """A resolved table: who sits at it, plus optional overrides — moderator
+    model, a one-line brief telling the moderator the table's format (e.g.
+    assigned sides), and default mode/speed dials (CLI flags win over these)."""
 
     personas: tuple[Persona, ...]
     moderator: str | None = None
     brief: str | None = None
+    mode: str | None = None
+    speed: str | None = None
 
 
 def available_packs() -> list[str]:
@@ -211,7 +228,15 @@ def load_personas(spec: str | None) -> Lineup:
             personas=personas,
             moderator=data.get("moderator"),
             brief=data.get("brief"),
+            mode=data.get("mode"),
+            speed=data.get("speed"),
         )
+        if lineup.mode is not None and lineup.mode not in MODE_NAMES:
+            raise ValueError(f"unknown mode {lineup.mode!r} — pick from {', '.join(MODE_NAMES)}")
+        if lineup.speed is not None and lineup.speed not in SPEED_DELAYS:
+            raise ValueError(
+                f"unknown speed {lineup.speed!r} — pick from {', '.join(SPEED_DELAYS)}"
+            )
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
         sys.exit(f"Invalid persona pack {path}: {e}")
 

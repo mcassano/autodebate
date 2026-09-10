@@ -45,7 +45,10 @@ function addNote(text, isError) {
   const n = document.createElement("div");
   n.className = "note" + (isError ? " error" : "");
   n.textContent = text;
-  chat.appendChild(n);
+  // mid-turn (tool calls): these happened before the speech they feed,
+  // so they render above the in-progress bubble
+  if (currentBubble) chat.insertBefore(n, currentBubble);
+  else chat.appendChild(n);
   scrollDown();
 }
 

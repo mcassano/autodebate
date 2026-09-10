@@ -23,8 +23,18 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from .config import MODERATOR_MODEL, PERSONAS, Lineup, Persona, check_keys, load_personas
-from .engine import Engine
+from .config import (
+    DEFAULT_MODE,
+    DEFAULT_SPEED,
+    MODERATOR_MODEL,
+    PERSONAS,
+    Lineup,
+    Persona,
+    check_dials,
+    check_keys,
+    load_personas,
+)
+from .engine import Engine, quiet_asyncgen_noise
 
 STATIC = Path(__file__).parent / "static"
 
@@ -91,6 +101,9 @@ def create_app(lineup: Lineup | None = None) -> FastAPI:
         lineup = load_personas(os.environ["AUTODEBATE_PERSONAS"])
     lineup = lineup or Lineup(PERSONAS)
     check_keys(lineup.personas, lineup.moderator or MODERATOR_MODEL)
+    mode = os.environ.get("AUTODEBATE_MODE") or lineup.mode or DEFAULT_MODE
+    speed = os.environ.get("AUTODEBATE_SPEED") or lineup.speed or DEFAULT_SPEED
+    check_dials(mode, speed)
     hub = Hub()
     sink = WebSink(hub)
     engine = Engine(
@@ -98,11 +111,14 @@ def create_app(lineup: Lineup | None = None) -> FastAPI:
         personas=lineup.personas,
         moderator_model=lineup.moderator or MODERATOR_MODEL,
         brief=lineup.brief,
+        mode=mode,
+        speed=speed,
     )
     sink.engine = engine
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        quiet_asyncgen_noise()
         task = asyncio.create_task(engine.run())
         topic = os.environ.get("AUTODEBATE_TOPIC")
         if topic:  # a public café doesn't have to open its doors in silence

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.0 — 2026-09-10
+
+Registers, pacing, and a table of traders.
+
+- **Two dials**: `--mode debate|casual|funny` changes the table's register
+  (house rules + moderator nudges, personas untouched); `--speed
+  fast|medium|slow` sets the beat between turns. Packs can ship their own
+  defaults; flags and `AUTODEBATE_MODE`/`AUTODEBATE_SPEED` override.
+- **New pack: `traders`** — a tape-reading scalper, a macro catalyst trader,
+  and a systematic quant. Like-minded by tribe, not by opinion.
+- **Fix: chronological UI.** Tool calls now render above the in-progress
+  speech they feed, instead of appearing after the finished answer (TUI + web).
+- **Fix: `stock_quote` works** — moved to Yahoo Finance's public chart
+  endpoint after stooq's CSV endpoint disappeared.
+- Fix: silence the cosmetic httpcore2 async-generator teardown traceback on
+  exit (narrow filter, everything else still reports).
+
 ## 0.2.0 — 2026-09-10
 
 Persona packs, plus fixes from a day of real use.

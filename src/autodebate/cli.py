@@ -9,15 +9,19 @@ from rich.console import Console
 from rich.markup import escape
 
 from .config import (
+    DEFAULT_MODE,
+    DEFAULT_SPEED,
     DEFAULT_TOPIC,
+    MODE_NAMES,
     MODERATOR_MODEL,
+    SPEED_DELAYS,
     Lineup,
     Persona,
     available_packs,
     check_keys,
     load_personas,
 )
-from .engine import Engine
+from .engine import Engine, quiet_asyncgen_noise
 
 
 class CliSink:
@@ -46,7 +50,8 @@ class CliSink:
         self.console.print(f"[bold red]⚠ {escape(text)}[/]")
 
 
-async def run_cli(topic: str, turns: int, lineup: Lineup) -> None:
+async def run_cli(topic: str, turns: int, lineup: Lineup, mode: str, speed: str) -> None:
+    quiet_asyncgen_noise()
     sink = CliSink()
     engine = Engine(
         sink,
@@ -55,6 +60,8 @@ async def run_cli(topic: str, turns: int, lineup: Lineup) -> None:
         personas=lineup.personas,
         moderator_model=lineup.moderator or MODERATOR_MODEL,
         brief=lineup.brief,
+        mode=mode,
+        speed=speed,
     )
     sink.console.print(f"[dim]logging to {engine.log.path}[/]")
     engine.submit_user(topic)
@@ -84,6 +91,18 @@ def main() -> None:
         help="persona pack: a built-in name (see --packs) or a path to a JSON pack",
     )
     ap.add_argument("--packs", action="store_true", help="list built-in persona packs and exit")
+    ap.add_argument(
+        "--mode",
+        choices=MODE_NAMES,
+        default=None,
+        help="the table's register (default: debate, or the pack's)",
+    )
+    ap.add_argument(
+        "--speed",
+        choices=list(SPEED_DELAYS),
+        default=None,
+        help="the beat between turns (default: medium, or the pack's)",
+    )
     args = ap.parse_args()
 
     if args.packs:
@@ -97,9 +116,11 @@ def main() -> None:
 
     lineup = load_personas(args.personas)
     check_keys(lineup.personas, lineup.moderator or MODERATOR_MODEL)
+    mode = args.mode or lineup.mode or DEFAULT_MODE
+    speed = args.speed or lineup.speed or DEFAULT_SPEED
 
     if args.cli:
-        asyncio.run(run_cli(args.topic or DEFAULT_TOPIC, args.turns, lineup))
+        asyncio.run(run_cli(args.topic or DEFAULT_TOPIC, args.turns, lineup, mode, speed))
     else:
         from .tui import DebateApp  # defer textual import in --cli mode
 
@@ -107,6 +128,8 @@ def main() -> None:
             max_turns=args.max_turns,
             opening=args.topic,
             lineup=lineup,
+            mode=mode,
+            speed=speed,
         ).run()
 
 

@@ -8,19 +8,14 @@
    stronger opinions
 ```
 
-**Eavesdrop on three brilliant minds arguing in a coffee shop — and pull up a chair whenever you like.**
+**Three of the world's best AI models sit at a coffee-shop table and argue — with live web access, real personas, and a chair waiting for you.**
 
-Three personas, each backed by a different frontier-class LLM, sit at a small table and talk about the future. They don't interrupt each other. They steelman, challenge, build on each other — and occasionally go quiet to think. An invisible moderator decides who speaks next. Each of them can search the live web, read pages, check papers, and do the math when a fact would sharpen an argument. You listen from the next table, and whenever something makes you lean in, you say it — and the table turns to you.
+- **The debates are genuinely good.** Not three chatbots agreeing — three models from three rival labs, each told to steelman-then-challenge, each able to search the live web, read papers, and pull stock quotes mid-argument. [Read a real exchange](#a-taste).
+- **Recast the whole table with one flag.** `--personas arena` seats a prosecutor, defender, and judge on assigned sides. `--personas traders` seats a scalper, a macro trader, and a quant. `--personas locals` runs fully offline on Ollama — free, private, no API keys.
+- **Watch it your way.** A streaming terminal TUI, a headless CLI, or a coffee-shop web UI you can deploy to Railway in two minutes and share with anyone.
+- **Two dials, endless moods.** `--mode debate|casual|funny` for the register, `--speed fast|medium|slow` for the pace.
 
 Built on a working hypothesis: **intellectual rigor + honest challenge between exceptional minds is what produces breakthroughs.**
-
-## Why it's interesting
-
-- **Three training lineages, one table.** The seats are backed by models from three different labs on purpose — same-priors panels converge; this table genuinely disagrees.
-- **It's a debate, not a panel.** Personas are instructed to steelman-then-challenge, never flatter, and pass when they have nothing to add.
-- **Live facts at the table.** Six read-only tools: web search, page reading, arXiv, stock quotes, a calculator, and the current date.
-- **Cheap to leave running.** One frontier anchor + two top open-weight seats, a tiny moderator model, rolling context summaries, a token meter, and a turn cap.
-- **Small enough to read.** The engine is one file (`src/autodebate/engine.py`); the UIs never call a model.
 
 ## The lineup
 
@@ -61,7 +56,13 @@ autodebate
 autodebate                          # quiet until you speak first
 autodebate "AGI timelines"          # opens with that message for you
 autodebate --max-turns 40           # auto-pause after 40 AI turns (cost guard)
+autodebate --mode funny --speed fast --personas traders
 ```
+
+`--mode` sets the register (`debate` default, `casual`, `funny`) and `--speed`
+sets the beat between turns (`fast`, `medium` default, `slow`). Packs can set
+their own defaults; your flags win. Web deploys read `AUTODEBATE_MODE` and
+`AUTODEBATE_SPEED`.
 
 Type + `enter` to queue something to say (spoken at the next turn boundary) ·
 `ctrl+p` pause/resume · `ctrl+q` quit.
@@ -122,6 +123,7 @@ Recast the whole table with one flag. Five packs ship in the box
 | `boardroom` | David · Vera · Juno | CFO, growth operator, and product visionary stress-test ideas like it's their money |
 | `lab` | Elena · Ravi · Moss | Theorist, experimentalist, and ML-systems skeptic on how science actually moves |
 | `arena` | Rhea · Theo · Sol | Prosecutor, defender, and judge — table a motion, watch it get tested on assigned sides |
+| `traders` | Rico · Maggie · Wren | A scalper, a macro trader, and a quant — same tribe, different religions |
 | `locals` | Ada · Bram · Cleo | Runs entirely on local Ollama models — free, private, offline |
 
 ```bash

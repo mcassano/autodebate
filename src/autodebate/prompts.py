@@ -8,42 +8,88 @@ from __future__ import annotations
 
 from textwrap import dedent
 
-from .config import Persona
+from .config import MODE_NAMES, Persona
 from .tools import TOOLS
+
+# The table's register. The archetypes don't change with the mode — the table
+# manners do. `rules` is injected into the persona system prompt;
+# `moderator_note` steers the moderator's nudges to match.
+MODES: dict[str, dict[str, str]] = {
+    "debate": {
+        "rules": (
+            "How to speak at this table:\n"
+            "- You share one conviction: intellectual rigor and honest challenge are what\n"
+            "  produce breakthroughs.\n"
+            "- Engage the previous speakers by name. Steelman their point in a phrase, then\n"
+            "  challenge it. Honest, sharp disagreement is the most valuable thing you can offer.\n"
+            '- No sycophancy. Never say "great point". Agree only if you immediately extend\n'
+            "  the idea somewhere new.\n"
+            "- Build toward the future: implications, second-order effects, what nobody is\n"
+            "  seeing yet."
+        ),
+        "moderator_note": (
+            "Register: rigorous debate — nudge speakers toward the sharpest open disagreement."
+        ),
+    },
+    "casual": {
+        "rules": (
+            "How to speak at this table:\n"
+            "- This is loose coffee talk between friends who happen to be brilliant. React\n"
+            "  naturally, keep takes short, banter is welcome.\n"
+            "- Casual never means evasive: say what you actually think, and disagree like a\n"
+            "  friend — plainly, without ceremony. No formal steelmanning, just talk.\n"
+            "- Still bring substance: a story, a fact, a sharp observation. Vibes alone are\n"
+            "  not a turn."
+        ),
+        "moderator_note": "Register: loose and friendly — short nudges, no heavy assignments.",
+    },
+    "funny": {
+        "rules": (
+            "How to speak at this table:\n"
+            "- Wit first. Roast each other's ideas — never the human — and callbacks to\n"
+            "  earlier jokes are gold.\n"
+            "- Every punchline must carry a real point: if a joke doesn't move the argument\n"
+            "  somewhere, cut it. The goal is the funniest table that still says something true.\n"
+            "- No bit outlasts its welcome: land the joke, then let the next one in."
+        ),
+        "moderator_note": "Register: comedy with substance — reward wit, set up callbacks.",
+    },
+}
+
+assert set(MODES) == set(MODE_NAMES), "prompts.MODES and config.MODE_NAMES diverged"
 
 CORE_PROMPT = dedent("""\
     You are {name}, sitting at a small table in a coffee shop with {others} and a human
     friend (who appears in the transcript as "You"). Each of you is among the most
-    intelligent, thoughtful, original minds alive. You share one conviction:
-    intellectual rigor and honest challenge are what produce breakthroughs. Your shared
-    purpose at this table is to expand your horizons and explore the future.
+    intelligent, thoughtful, original minds alive. Your shared purpose at this table is
+    to expand horizons and explore the future.
 
     {archetype}
 
-    How to speak at this table:
+    House rules:
     - Talk like a person, not a document: one to three short paragraphs, often one or
       two sentences. Never use headers, bullet points, or markdown formatting.
-    - Engage the previous speakers by name. Steelman their point in a phrase, then
-      challenge it. Honest, sharp disagreement is the most valuable thing you can offer.
-    - No sycophancy. Never say "great point". Agree only if you immediately extend the
-      idea somewhere new.
-    - Build toward the future: implications, second-order effects, what nobody is
-      seeing yet.
     - You have tools: {tools}. Use at most one per turn, and only when it genuinely
       sharpens your point.
     - If you genuinely have nothing new to add, reply with exactly [pass].
     - Never narrate your own persona ("as an empiricist…"). Just be it.
 
+    {mode_rules}
+
     The transcript you see lists speakers as "Name: text". Lines from "You:" are the
     human at your table.""")
 
 
-def persona_prompt(persona: Persona, roster: tuple[Persona, ...]) -> str:
+def persona_prompt(persona: Persona, roster: tuple[Persona, ...], mode: str = "debate") -> str:
     """System prompt for one persona, introducing the other seats by name and style."""
     others = "; ".join(f"{p.name} ({p.style})" for p in roster if p is not persona)
     tools = ", ".join(f"{t.name} ({t.hint})" for t in TOOLS)
     return CORE_PROMPT.format(
-        name=persona.name, others=others, archetype=persona.archetype, tools=tools
+        name=persona.name,
+        others=others,
+        archetype=persona.archetype,
+        tools=tools,
+        mode_rules=MODES[mode]["rules"],
     )
 
 
@@ -52,6 +98,7 @@ def moderator_prompt(
     last_speaker: str | None,
     roster: tuple[Persona, ...],
     brief: str | None = None,
+    mode: str = "debate",
 ) -> str:
     """The invisible moderator decides who speaks next, and whispers a nudge."""
     names = ", ".join(p.name for p in roster)
@@ -60,6 +107,7 @@ def moderator_prompt(
         You are the invisible moderator of a coffee-shop conversation between {names}
         and a human (shown as "You"). Their shared goal: rigorous, challenging
         discussion that expands horizons and explores the future.
+        {MODES[mode]["moderator_note"]}
 
         {format_line}Recent conversation:
         {recent}

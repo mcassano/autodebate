@@ -11,8 +11,6 @@ dispatch, UI line, and transcript note from this file.
 from __future__ import annotations
 
 import ast
-import csv
-import io
 import json
 import re
 import urllib.parse
@@ -270,26 +268,28 @@ ARXIV_SEARCH = Tool(
 
 
 async def _stock_quote(args: dict[str, Any]) -> str:
-    """Latest quote for a ticker via stooq's free CSV endpoint (no key)."""
-    symbol = str(args.get("symbol", "")).strip().lower()
-    if not re.fullmatch(r"[a-z0-9.\-^=]{1,12}", symbol):
+    """Latest quote for a ticker via Yahoo Finance's public chart endpoint."""
+    symbol = str(args.get("symbol", "")).strip().upper()
+    if not re.fullmatch(r"[A-Z0-9.\-^=]{1,12}", symbol):
         return "Invalid symbol."
-    if "." not in symbol and "^" not in symbol and "=" not in symbol:
-        symbol += ".us"  # stooq's convention for US listings
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.get(
-            "https://stooq.com/q/l/",
-            params={"s": symbol, "f": "sd2t2ohlcv", "h": "", "e": "csv"},
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+            headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"},
         )
         r.raise_for_status()
-    rows = list(csv.DictReader(io.StringIO(r.text)))
-    if not rows or rows[0].get("Close") in (None, "N/D"):
+    result = (r.json().get("chart") or {}).get("result") or []
+    if not result:
         return f"No quote found for {symbol}."
-    q = rows[0]
-    return (
-        f"{q['Symbol']}: close {q['Close']} (open {q['Open']}, high {q['High']}, "
-        f"low {q['Low']}, volume {q['Volume']}) as of {q['Date']} {q['Time']} UTC"
-    )
+    m = result[0]["meta"]
+    price, prev = m.get("regularMarketPrice"), m.get("previousClose")
+    if price is None:
+        return f"No quote found for {symbol}."
+    change = f", {(price / prev - 1) * 100:+.1f}% on the day" if prev else ""
+    hi, lo = m.get("regularMarketDayHigh"), m.get("regularMarketDayLow")
+    span = f", day range {lo}–{hi}" if hi and lo else ""
+    exchange = m.get("exchangeName", "?")
+    return f"{m['symbol']}: {price} {m.get('currency', '')}{change}{span} on {exchange}"
 
 
 STOCK_QUOTE = Tool(
@@ -300,7 +300,7 @@ STOCK_QUOTE = Tool(
     schema=_fn_schema(
         "stock_quote",
         "Get the latest quote for a stock/ETF ticker (e.g. NVDA, SPY) or index "
-        "(e.g. ^spx). Delayed data from stooq.",
+        "(e.g. ^GSPC). Data from Yahoo Finance, may be delayed.",
         {"symbol": {"type": "string", "description": "The ticker symbol."}},
         ["symbol"],
     ),

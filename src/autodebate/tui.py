@@ -16,8 +16,8 @@ from textual.binding import Binding
 from textual.containers import VerticalScroll
 from textual.widgets import Footer, Header, Input, Static
 
-from .config import MODERATOR_MODEL, PERSONAS, Lineup, Persona
-from .engine import Engine
+from .config import DEFAULT_MODE, DEFAULT_SPEED, MODERATOR_MODEL, PERSONAS, Lineup, Persona
+from .engine import Engine, quiet_asyncgen_noise
 
 
 class ChatView(VerticalScroll):
@@ -89,11 +89,15 @@ class DebateApp(App):
         max_turns: int | None = None,
         opening: str | None = None,
         lineup: Lineup | None = None,
+        mode: str = DEFAULT_MODE,
+        speed: str = DEFAULT_SPEED,
     ):
         super().__init__()
         self._max_turns = max_turns
         self._opening = opening
         self._lineup = lineup or Lineup(PERSONAS)
+        self._mode = mode
+        self._speed = speed
         self.title = "coffee shop — " + " · ".join(p.name for p in self._lineup.personas)
         self._current: Speech | None = None
         self._status_text = ""
@@ -110,6 +114,7 @@ class DebateApp(App):
         yield Footer()
 
     def on_mount(self) -> None:
+        quiet_asyncgen_noise()
         self.chat = self.query_one(ChatView)
         self.engine = Engine(
             TuiSink(self),
@@ -117,6 +122,8 @@ class DebateApp(App):
             personas=self._lineup.personas,
             moderator_model=self._lineup.moderator or MODERATOR_MODEL,
             brief=self._lineup.brief,
+            mode=self._mode,
+            speed=self._speed,
         )
         self._engine_task = asyncio.create_task(self.engine.run())
         self.add_line(
@@ -176,7 +183,12 @@ class DebateApp(App):
     def add_line(self, text: str, cls: str) -> None:
         w = Static(f"[dim]{escape(text)}[/]" if cls == "dimline" else escape(text))
         w.add_class(cls)
-        self.chat.mount(w)
+        if self._current is not None:
+            # mid-turn (tool calls, notes): these happened BEFORE the speech
+            # they feed, so they render above the in-progress bubble
+            self.chat.mount(w, before=self._current)
+        else:
+            self.chat.mount(w)
         self._maybe_scroll()
 
     def _maybe_scroll(self) -> None:

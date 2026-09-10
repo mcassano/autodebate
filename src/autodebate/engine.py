@@ -18,10 +18,13 @@ from openai import AsyncOpenAI
 
 from . import prompts
 from .config import (
+    DEFAULT_MODE,
+    DEFAULT_SPEED,
     MAX_CONSEC_PASSES,
     MODERATOR_MODEL,
     PERSONAS,
     PROVIDERS,
+    SPEED_DELAYS,
     SUMMARY_EVERY,
     WINDOW_TURNS,
     Persona,
@@ -62,6 +65,34 @@ def short_error(e: Exception) -> str:
     return " ".join(str(e).split())[:240]
 
 
+def quiet_asyncgen_noise() -> None:
+    """Silence exactly one upstream bug, nothing else.
+
+    openai 3.x streams over httpx2/httpcore2; when an SSE stream is torn down at
+    loop shutdown, httpcore2's PoolByteStream async generator fails to close and
+    asyncio logs a noisy (but harmless) "error occurred during closing of
+    asynchronous generator" traceback after an otherwise clean exit. Swallow
+    that specific generator's noise; every other loop error reports normally.
+    Call once from each front end, on the running loop.
+    """
+    loop = asyncio.get_running_loop()
+    previous = loop.get_exception_handler()
+
+    def handler(loop: asyncio.AbstractEventLoop, context: dict) -> None:
+        message = context.get("message", "")
+        asyncgen = repr(context.get("asyncgen", ""))
+        if message.startswith("an error occurred during closing of asynchronous generator") and (
+            "httpcore" in asyncgen or "PoolByteStream" in asyncgen
+        ):
+            return
+        if previous:
+            previous(loop, context)
+        else:
+            loop.default_exception_handler(context)
+
+    loop.set_exception_handler(handler)
+
+
 class TranscriptLog:
     """Appends the conversation to transcripts/debate-<ts>.md as it happens,
     so the record survives closing the app (or a crash)."""
@@ -97,12 +128,16 @@ class Engine:
         personas: tuple[Persona, ...] = PERSONAS,
         moderator_model: str = MODERATOR_MODEL,
         brief: str | None = None,
+        mode: str = DEFAULT_MODE,
+        speed: str = DEFAULT_SPEED,
     ):
         self.sink = sink
         self.personas = personas
         self.by_name = {p.name: p for p in personas}
         self.moderator_model = moderator_model
         self.brief = brief
+        self.mode = mode
+        self.speed = speed
         self.transcript: list[Entry] = []
         self.user_queue: asyncio.Queue[str] = asyncio.Queue()
         self.running = asyncio.Event()  # set = talking, clear = paused
@@ -212,10 +247,20 @@ class Engine:
             self.consecutive_passes = 0
             self._add(nxt, text)
             await self.sink.speaker_end(persona, text)
+            await self._paced_delay()
 
     async def _pause(self, status: str) -> None:
         self.running.clear()
         await self.sink.status(status)
+
+    async def _paced_delay(self) -> None:
+        """The beat between turns, set by --speed. Skipped the moment the human
+        queues something, the table is paused, or we're shutting down."""
+        remaining = SPEED_DELAYS.get(self.speed, 0.0)
+        while remaining > 0 and not self.stop and self.running.is_set() and self.user_queue.empty():
+            step = min(0.25, remaining)
+            await asyncio.sleep(step)
+            remaining -= step
 
     async def _silence(self) -> None:
         await self.sink.dim("☕ the table falls into comfortable silence")
@@ -232,7 +277,9 @@ class Engine:
     async def _moderator_pick(self) -> tuple[str | None, str | None]:
         """→ (next speaker or None for silence, optional one-line nudge)."""
         recent = "\n".join(f"{e.speaker}: {e.text}" for e in self.transcript[-12:])
-        prompt = prompts.moderator_prompt(recent, self.last_speaker, self.personas, self.brief)
+        prompt = prompts.moderator_prompt(
+            recent, self.last_speaker, self.personas, self.brief, self.mode
+        )
         provider, model = parse_spec(self.moderator_model)
         r = await self._client(provider).chat.completions.create(
             model=model,
@@ -400,7 +447,7 @@ class Engine:
         become `user` lines prefixed "Name: " (consecutive ones merged, since some
         providers require role alternation).
         """
-        system = prompts.persona_prompt(persona, self.personas)
+        system = prompts.persona_prompt(persona, self.personas, self.mode)
         msgs: list[dict] = [{"role": "system", "content": system}]
         start = max(self.summary_upto, len(self.transcript) - WINDOW_TURNS)
         if self.summary:
