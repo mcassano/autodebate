@@ -62,6 +62,8 @@ async def run_cli(topic: str, turns: int, lineup: Lineup, mode: str, speed: str)
         brief=lineup.brief,
         mode=mode,
         speed=speed,
+        troupe=lineup.troupe,
+        out_tonight=lineup.out_tonight,
     )
     sink.console.print(f"[dim]logging to {engine.log.path}[/]")
     engine.submit_user(topic)

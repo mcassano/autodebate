@@ -16,7 +16,14 @@ from textual.binding import Binding
 from textual.containers import VerticalScroll
 from textual.widgets import Footer, Header, Input, Static
 
-from .config import DEFAULT_MODE, DEFAULT_SPEED, MODERATOR_MODEL, PERSONAS, Lineup, Persona
+from .config import (
+    DEFAULT_MODE,
+    DEFAULT_SPEED,
+    MODERATOR_MODEL,
+    Lineup,
+    Persona,
+    load_personas,
+)
 from .engine import Engine, quiet_asyncgen_noise
 
 
@@ -95,7 +102,7 @@ class DebateApp(App):
         super().__init__()
         self._max_turns = max_turns
         self._opening = opening
-        self._lineup = lineup or Lineup(PERSONAS)
+        self._lineup = lineup or load_personas(None)
         self._mode = mode
         self._speed = speed
         self.title = "coffee shop — " + " · ".join(p.name for p in self._lineup.personas)
@@ -108,7 +115,7 @@ class DebateApp(App):
         yield ChatView()
         yield Static("", id="status")
         yield Input(
-            placeholder="Say something to the table…  (enter to queue · ctrl+p to pause)",
+            placeholder="Say something to the table…  (enter to queue · /seat · /cast · ctrl+p)",
             id="input",
         )
         yield Footer()
@@ -124,6 +131,8 @@ class DebateApp(App):
             brief=self._lineup.brief,
             mode=self._mode,
             speed=self._speed,
+            troupe=self._lineup.troupe,
+            out_tonight=self._lineup.out_tonight,
         )
         self._engine_task = asyncio.create_task(self.engine.run())
         self.add_line(

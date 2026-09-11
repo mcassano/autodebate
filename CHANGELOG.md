@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.4.0 — 2026-09-10
+
+The cast now follows the conversation.
+
+- **The troupe is the default evening**: eight personas in the café, three at
+  the table. The moderator can `SWITCH` a seat when the topic genuinely shifts
+  (at most once every eight turns — the table has weight, not whiplash), and a
+  newcomer gets a sitrep of what they missed. `autodebate` with no flags is a
+  rotating cast; `--personas classic` is the original fixed trio.
+- **You have the same power**: `/seat Noa [for Marcus]` slides anyone from the
+  café into the table; `/cast traders` changes the whole lineup mid-session.
+- **Providers are probed at startup** — keys for hosted providers, a one-second
+  ping for Ollama/LM Studio. Unreachable personas are "out tonight" and never
+  seated, so an OpenRouter user never gets a local persona (and vice versa).
+  Choosing a pack explicitly with an unreachable provider fails fast and loud
+  instead of flailing at runtime.
+- New troupe seats: Noa (film & culture critic), Sana (geopolitics), Gus
+  (house comic) — plus Maggie and Wren joining from the traders table.
+- Moderator reply parsing is now a pure, unit-tested function (9 cases in CI).
+
 ## 0.3.1 — 2026-09-10
 
 Tooling only, no app changes.

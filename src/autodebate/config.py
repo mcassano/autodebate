@@ -173,19 +173,23 @@ def check_keys(personas: tuple[Persona, ...] = PERSONAS, moderator: str = MODERA
 
 PACKS_DIR = Path(__file__).parent / "packs"
 COLOR_ROTATION = ("cyan", "magenta", "yellow", "green", "blue", "red")
+MIN_SWITCH_GAP = 8  # turns the moderator must wait between seat switches
 
 
 @dataclass(frozen=True)
 class Lineup:
-    """A resolved table: who sits at it, plus optional overrides — moderator
-    model, a one-line brief telling the moderator the table's format (e.g.
-    assigned sides), and default mode/speed dials (CLI flags win over these)."""
+    """A resolved table. `personas` are the current seats; `troupe`, when
+    non-empty, is everyone in the café tonight (seats included) — the moderator
+    may rotate people through. `out_tonight` names troupe members whose
+    provider wasn't reachable at load time."""
 
     personas: tuple[Persona, ...]
     moderator: str | None = None
     brief: str | None = None
     mode: str | None = None
     speed: str | None = None
+    troupe: tuple[Persona, ...] = ()
+    out_tonight: tuple[str, ...] = ()
 
 
 def available_packs() -> list[str]:
@@ -193,51 +197,133 @@ def available_packs() -> list[str]:
     return sorted(p.stem for p in PACKS_DIR.glob("*.json"))
 
 
-def load_personas(spec: str | None) -> Lineup:
-    """Resolve a lineup: None → the default trio; a built-in pack name
+def _probe(provider_key: str) -> bool:
+    """Can this provider actually be used from here? Key'd providers answer by
+    key presence; local servers get a one-second ping. Probed once per run."""
+    p = PROVIDERS[provider_key]
+    if p.key_env:
+        return _key_present(p.key_env)
+    try:
+        import httpx
+
+        base = (p.base_url or "").rstrip("/")
+        url = (
+            base.removesuffix("/v1") + "/api/tags" if provider_key == "ollama" else base + "/models"
+        )
+        with httpx.Client(timeout=1.0) as client:
+            return client.get(url).status_code == 200
+    except Exception:
+        return False
+
+
+def _split_by_reachability(personas: tuple[Persona, ...]) -> tuple[list[Persona], list[str]]:
+    available: list[Persona] = []
+    out: list[str] = []
+    probes: dict[str, bool] = {}
+    for persona in personas:
+        provider = parse_spec(persona.model)[0]
+        if provider not in probes:
+            probes[provider] = _probe(provider)
+        (available if probes[provider] else out).append(
+            persona if probes[provider] else persona.name
+        )
+    return available, out
+
+
+def _validate_dials(mode: str | None, speed: str | None, path: Path) -> None:
+    modes = ", ".join(MODE_NAMES)
+    speeds = ", ".join(SPEED_DELAYS)
+    if mode is not None and mode not in MODE_NAMES:
+        sys.exit(f"Invalid persona pack {path}: unknown mode {mode!r} — pick from {modes}")
+    if speed is not None and speed not in SPEED_DELAYS:
+        sys.exit(f"Invalid persona pack {path}: unknown speed {speed!r} — pick from {speeds}")
+
+
+def _build_persona(raw: dict, i: int) -> Persona:
+    return Persona(
+        name=raw["name"],
+        model=raw["model"],
+        color=raw.get("color") or COLOR_ROTATION[i % len(COLOR_ROTATION)],
+        style=raw["style"],
+        archetype=raw["archetype"],
+    )
+
+
+def _check_unique(people: tuple[Persona, ...], field: str) -> None:
+    values = [getattr(p, field) for p in people]
+    if len(set(values)) != len(values):
+        raise ValueError(f"duplicate persona {field}s: {', '.join(values)}")
+
+
+def load_personas(spec: str | None, apply_availability: bool = True) -> Lineup:
+    """Resolve a lineup: None → the default troupe; a built-in pack name
     ("stoics"); or a path to a JSON pack file.
 
-    Exits with a clear message on any problem — a pack should never fail
-    mysteriously."""
-    if spec is None:
-        return Lineup(PERSONAS)
-
-    path = Path(spec) if (spec.endswith(".json") or "/" in spec) else PACKS_DIR / f"{spec}.json"
+    A pack with "personas" is a fixed table. A pack with "troupe" (+ "seats")
+    is a rotating cast: everyone reachable is in the café, the first `seats`
+    take the table. With apply_availability, troupe members whose provider is
+    unreachable are held out (out_tonight); fixed packs only warn. Exits with
+    a clear message on any problem — a pack should never fail mysteriously."""
+    path = (
+        PACKS_DIR / "troupe.json"
+        if spec is None
+        else (Path(spec) if (spec.endswith(".json") or "/" in spec) else PACKS_DIR / f"{spec}.json")
+    )
     if not path.exists():
         sys.exit(f"No persona pack at {path} — built-in packs: {', '.join(available_packs())}")
 
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        raw = data["personas"]
-        if not 2 <= len(raw) <= 6:
-            raise ValueError("a table needs 2–6 personas")
-        personas = tuple(
-            Persona(
-                name=p["name"],
-                model=p["model"],
-                color=p.get("color") or COLOR_ROTATION[i % len(COLOR_ROTATION)],
-                style=p["style"],
-                archetype=p["archetype"],
-            )
-            for i, p in enumerate(raw)
-        )
-        names = [p.name for p in personas]
-        if len(set(names)) != len(names):
-            raise ValueError(f"duplicate persona names: {', '.join(names)}")
-        lineup = Lineup(
-            personas=personas,
+        common = dict(
             moderator=data.get("moderator"),
             brief=data.get("brief"),
             mode=data.get("mode"),
             speed=data.get("speed"),
         )
-        if lineup.mode is not None and lineup.mode not in MODE_NAMES:
-            raise ValueError(f"unknown mode {lineup.mode!r} — pick from {', '.join(MODE_NAMES)}")
-        if lineup.speed is not None and lineup.speed not in SPEED_DELAYS:
-            raise ValueError(
-                f"unknown speed {lineup.speed!r} — pick from {', '.join(SPEED_DELAYS)}"
+        _validate_dials(common["mode"], common["speed"], path)
+
+        if "troupe" in data:
+            troupe = tuple(_build_persona(p, i) for i, p in enumerate(data["troupe"]))
+            if not 3 <= len(troupe) <= 12:
+                raise ValueError("a troupe needs 3–12 personas")
+            _check_unique(troupe, "name")
+            seats = int(data.get("seats", 3))
+            if not 2 <= seats <= len(troupe):
+                raise ValueError(f"seats must be 2–{len(troupe)}")
+            out: list[str] = []
+            if apply_availability:
+                available, out = _split_by_reachability(troupe)
+            else:
+                available = list(troupe)
+            if len(available) < 2:
+                raise ValueError(
+                    "fewer than 2 of the troupe are reachable tonight "
+                    f"(out: {', '.join(out) or 'none'}) — check providers/keys"
+                )
+            return Lineup(
+                personas=tuple(available[:seats]),
+                troupe=tuple(available),
+                out_tonight=tuple(out),
+                **common,
             )
+
+        personas = tuple(_build_persona(p, i) for i, p in enumerate(data["personas"]))
+        if not 2 <= len(personas) <= 6:
+            raise ValueError("a table needs 2–6 personas")
+        _check_unique(personas, "name")
+        out = []
+        if apply_availability:
+            available, out = _split_by_reachability(personas)
+            if not available:
+                raise ValueError(
+                    f"none of {', '.join(p.name for p in personas)} are reachable "
+                    "— check providers/keys"
+                )
+        return Lineup(personas=personas, out_tonight=tuple(out), **common)
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
         sys.exit(f"Invalid persona pack {path}: {e}")
 
-    return lineup
+
+def missing_keys(personas: tuple[Persona, ...], moderator: str) -> list[str]:
+    """Provider keys the lineup needs but the environment doesn't have."""
+    return [k for k in sorted(_required_key_envs(personas, moderator)) if not _key_present(k)]

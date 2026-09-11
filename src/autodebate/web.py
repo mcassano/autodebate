@@ -27,7 +27,6 @@ from .config import (
     DEFAULT_MODE,
     DEFAULT_SPEED,
     MODERATOR_MODEL,
-    PERSONAS,
     Lineup,
     Persona,
     check_dials,
@@ -99,7 +98,7 @@ class WebSink:
 def create_app(lineup: Lineup | None = None) -> FastAPI:
     if lineup is None and os.environ.get("AUTODEBATE_PERSONAS"):
         lineup = load_personas(os.environ["AUTODEBATE_PERSONAS"])
-    lineup = lineup or Lineup(PERSONAS)
+    lineup = lineup or load_personas(None)
     mode = os.environ.get("AUTODEBATE_MODE") or lineup.mode or DEFAULT_MODE
     speed = os.environ.get("AUTODEBATE_SPEED") or lineup.speed or DEFAULT_SPEED
     check_dials(mode, speed)
@@ -112,6 +111,8 @@ def create_app(lineup: Lineup | None = None) -> FastAPI:
         brief=lineup.brief,
         mode=mode,
         speed=speed,
+        troupe=lineup.troupe,
+        out_tonight=lineup.out_tonight,
     )
     sink.engine = engine
 

@@ -28,6 +28,9 @@ echo "▸ imports (keyless)"
 echo "▸ persona packs"
 "$PY" tests/test_packs.py
 
+echo "▸ moderator parser"
+"$PY" tests/test_moderator.py
+
 if [ "${1:-}" = "--with-api" ]; then
   echo "▸ live smoke: TUI (real API calls)"
   "$PY" tests/test_tui.py

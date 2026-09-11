@@ -7,7 +7,8 @@
 **Three of the world's best AI models sit at a coffee-shop table and argue — with live web access, real personas, and a chair waiting for you.**
 
 - **The debates are genuinely good.** Not three chatbots agreeing — three models from three rival labs, each told to steelman-then-challenge, each able to search the live web, read papers, and pull stock quotes mid-argument. [Read a real exchange](#a-taste).
-- **Recast the whole table with one flag.** `--personas arena` seats a prosecutor, defender, and judge on assigned sides. `--personas traders` seats a scalper, a macro trader, and a quant. `--personas locals` runs fully offline on Ollama — free, private, no API keys.
+- **The cast follows the conversation.** The default evening is a troupe of eight — an empiricist, a builder, a philosopher, two traders, a film critic, a geopolitics mind, and a comic — with three seats at the table at a time. Talk movies and the film critic slides into the booth; the moderator rotates seats as topics drift, and you can `/seat Noa` or `/cast traders` yourself.
+- **Or fix the table with one flag.** `--personas arena` seats a prosecutor, defender, and judge on assigned sides. `--personas locals` runs fully offline on Ollama — free, private, no API keys. `--personas classic` is the original trio, no rotation.
 - **Watch it your way.** A streaming terminal TUI, a headless CLI, or a coffee-shop web UI you can deploy to Railway in two minutes and share with anyone.
 - **Two dials, endless moods.** `--mode debate|casual|funny` for the register, `--speed fast|medium|slow` for the pace.
 
@@ -108,13 +109,37 @@ model = "openai:gpt-6-astra"  # OpenAI direct (OPENAI_API_KEY)
 Only the keys for providers actually in use are required. Models that can't do
 tool calling are detected at runtime and simply debate without tools.
 
+## The troupe (default)
+
+With no flags, `autodebate` seats a rotating cast: eight personas are "in the
+café tonight," three at the table at any moment. The moderator watches the
+topic and can `SWITCH` a seat — no more than once every eight turns, so the
+table has memory and weight, not whiplash. A newcomer gets a sitrep of what
+they missed and the floor.
+
+You have the same power the moderator does:
+
+```
+/seat Noa              # slide Noa into the longest-quiet seat
+/seat Noa for Marcus   # evict a specific seat
+/cast traders          # change the whole table to another pack
+```
+
+Providers are probed at startup, so the cast is always people your machine can
+actually run: hosted providers are checked by key, local ones (Ollama, LM
+Studio) by a one-second ping. Anyone unreachable is listed as "out tonight"
+and never seated — an OpenRouter user never gets an Ollama persona, and vice
+versa. `--personas classic` restores the original fixed trio.
+
 ## Persona packs
 
-Recast the whole table with one flag. Five packs ship in the box
-(`autodebate --packs` to list):
+Recast the whole table with one flag. Six fixed packs ship in the box alongside
+the troupe (`autodebate --packs` to list):
 
 | Pack | Seats | The chemistry |
 |------|-------|---------------|
+| `troupe` | rotating, 8 → 3 | **The default.** The classics plus traders, a film critic, a geopolitics mind, and a comic |
+| `classic` | Marcus · Priya · Kaito | The original trio — empiricist, builder, philosopher, no rotation |
 | `stoics` | Aurelia · Nikos · Selene | Stoic, Cynic, and Epicurean argue about how to live now |
 | `boardroom` | David · Vera · Juno | CFO, growth operator, and product visionary stress-test ideas like it's their money |
 | `lab` | Elena · Ravi · Moss | Theorist, experimentalist, and ML-systems skeptic on how science actually moves |
@@ -127,10 +152,11 @@ autodebate --personas arena "Motion: this house believes remote work has failed.
 AUTODEBATE_PERSONAS=stoics autodebate-web
 ```
 
-Write your own as JSON (name, model spec, style, archetype per seat; color
-optional; `moderator` and `brief` optional — `brief` is a one-line note to the
-moderator about the table's format, which is how `arena` keeps its sides
-straight), then `--personas path/to/pack.json`.
+Write your own as JSON — `"personas"` for a fixed table or `"troupe"` +
+`"seats"` for a rotating cast (name, model spec, style, archetype per seat;
+color optional; `moderator` and `brief` optional — `brief` is a one-line note
+to the moderator about the table's format, which is how `arena` keeps its
+sides straight) — then `--personas path/to/pack.json`.
 
 ## A taste
 

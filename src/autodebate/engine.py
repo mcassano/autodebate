@@ -21,6 +21,7 @@ from .config import (
     DEFAULT_MODE,
     DEFAULT_SPEED,
     MAX_CONSEC_PASSES,
+    MIN_SWITCH_GAP,
     MODERATOR_MODEL,
     PERSONAS,
     PROVIDERS,
@@ -29,6 +30,8 @@ from .config import (
     WINDOW_TURNS,
     Persona,
     key_for,
+    load_personas,
+    missing_keys,
     parse_spec,
 )
 from .tools import TOOL_BY_NAME, TOOL_SCHEMAS
@@ -93,6 +96,40 @@ def quiet_asyncgen_noise() -> None:
     loop.set_exception_handler(handler)
 
 
+@dataclass
+class ModeratorDecision:
+    nxt: str | None
+    nudge: str | None
+    switch: tuple[str, str] | None  # (departing seat, arriving from the café)
+    found_next: bool = False
+    next_raw: str | None = None  # the literal NEXT value, even when invalid
+
+
+def parse_moderator_reply(
+    content: str, seated: set[str], troupe_names: set[str], last_speaker: str | None
+) -> ModeratorDecision:
+    """Parse the moderator's NEXT:/NUDGE:/SWITCH: reply. Pure — no I/O, so tests
+    can hammer it. Anything unrecognized degrades to 'no valid choice'."""
+    decision = ModeratorDecision(nxt=None, nudge=None, switch=None)
+    for line in content.splitlines():
+        upper = line.upper()
+        if upper.startswith("NEXT:"):
+            decision.found_next = True
+            val = line.split(":", 1)[1].strip().strip('."* ')
+            decision.next_raw = val
+            # NOBODY, the last speaker, and unknown names all mean "no one valid"
+            decision.nxt = val if val in seated and val != last_speaker else None
+        elif upper.startswith("NUDGE:"):
+            val = line.split(":", 1)[1].strip()
+            decision.nudge = None if val in ("", "-") else val
+        elif upper.startswith("SWITCH:") and "->" in line:
+            body = line.split(":", 1)[1]
+            dep, arr = (x.strip().strip('."* ') for x in body.split("->", 1))
+            if dep in seated and arr in troupe_names and arr not in seated:
+                decision.switch = (dep, arr)
+    return decision
+
+
 class TranscriptLog:
     """Appends the conversation to transcripts/debate-<ts>.md as it happens,
     so the record survives closing the app (or a crash)."""
@@ -130,6 +167,8 @@ class Engine:
         brief: str | None = None,
         mode: str = DEFAULT_MODE,
         speed: str = DEFAULT_SPEED,
+        troupe: tuple[Persona, ...] = (),
+        out_tonight: tuple[str, ...] = (),
     ):
         self.sink = sink
         self.personas = personas
@@ -138,6 +177,11 @@ class Engine:
         self.brief = brief
         self.mode = mode
         self.speed = speed
+        self.troupe = troupe
+        self.out_tonight = out_tonight
+        self.turns_since_switch = 0
+        self._last_switch_in: str | None = None
+        self._sitrep: tuple[str, str] | None = None  # (arriving, departing)
         self.transcript: list[Entry] = []
         self.user_queue: asyncio.Queue[str] = asyncio.Queue()
         self.running = asyncio.Event()  # set = talking, clear = paused
@@ -168,7 +212,10 @@ class Engine:
     # -- user input ---------------------------------------------------------
 
     def submit_user(self, text: str) -> None:
-        self.user_queue.put_nowait(text)
+        if text.startswith("/"):
+            self.user_queue.put_nowait(("cmd", text))
+        else:
+            self.user_queue.put_nowait(text)
         self.running.set()
 
     # -- main loop ----------------------------------------------------------
@@ -178,6 +225,10 @@ class Engine:
             await self.sink.dim(
                 "· no BRAVE_SEARCH_API_KEY — the table debates without live web search"
             )
+        if self.out_tonight:
+            await self.sink.dim(
+                f"· out tonight (provider unreachable): {', '.join(self.out_tonight)}"
+            )
         while not self.stop:
             await self.running.wait()
             if self.stop:
@@ -185,11 +236,14 @@ class Engine:
 
             while True:  # queued user messages are spoken first, at the turn boundary
                 try:
-                    msg = self.user_queue.get_nowait()
+                    item = self.user_queue.get_nowait()
                 except asyncio.QueueEmpty:
                     break
-                self._add("You", msg)
-                await self.sink.user_message(msg)
+                if isinstance(item, tuple):  # a /command, not table speech
+                    await self._handle_command(item[1])
+                    continue
+                self._add("You", item)
+                await self.sink.user_message(item)
 
             if not self.transcript:
                 await self._pause("paused — the table waits for you")
@@ -209,12 +263,39 @@ class Engine:
 
             await self.sink.status("the moderator glances around the table…")
             try:
-                nxt, nudge = await self._moderator_pick()
+                decision = await self._moderator_decide()
             except Exception as e:
                 await self.sink.error(f"moderator error: {short_error(e)}")
                 await self._pause("paused — something went wrong")
                 continue
 
+            if decision.switch and self._apply_switch(*decision.switch):
+                dep, arr = decision.switch
+                await self.sink.dim(f"☕ {dep} settles their tab · {arr} slides into the booth")
+                self.log.note(f"{dep} settles their tab · {arr} slides into the booth")
+                if decision.nxt is None:
+                    decision.nxt = arr  # the newcomer naturally gets the floor
+
+            nxt, nudge = decision.nxt, decision.nudge
+            if (
+                nxt is None
+                and decision.next_raw
+                and decision.next_raw in {p.name for p in self.troupe}
+                and decision.next_raw not in self.by_name
+            ):
+                # a NEXT naming someone in the café is an implicit switch request
+                departing = self._least_recent_speaker()
+                if self._apply_switch(departing, decision.next_raw):
+                    arr = decision.next_raw
+                    await self.sink.dim(
+                        f"☕ {departing} settles their tab · {arr} slides into the booth"
+                    )
+                    self.log.note(f"{departing} settles their tab · {arr} slides into the booth")
+                    nxt = arr
+            if nxt is None and self.transcript and self.transcript[-1].speaker == "You":
+                # the table always answers the human — NOBODY is only a valid
+                # call once the personas are actually talking among themselves
+                nxt = self._least_recent_speaker()
             if nxt is None:
                 await self._silence()
                 continue
@@ -234,6 +315,7 @@ class Engine:
                 continue
 
             self.turns += 1
+            self.turns_since_switch += 1
             self.last_speaker = nxt
 
             if not text or is_pass(text):
@@ -274,11 +356,10 @@ class Engine:
 
     # -- moderator ----------------------------------------------------------
 
-    async def _moderator_pick(self) -> tuple[str | None, str | None]:
-        """→ (next speaker or None for silence, optional one-line nudge)."""
+    async def _moderator_decide(self) -> ModeratorDecision:
         recent = "\n".join(f"{e.speaker}: {e.text}" for e in self.transcript[-12:])
         prompt = prompts.moderator_prompt(
-            recent, self.last_speaker, self.personas, self.brief, self.mode
+            recent, self.last_speaker, self.personas, self.brief, self.mode, self.troupe
         )
         provider, model = parse_spec(self.moderator_model)
         r = await self._client(provider).chat.completions.create(
@@ -289,25 +370,114 @@ class Engine:
         )
         self._count_usage(r.usage)
         content = (r.choices[0].message.content or "").strip()
+        decision = parse_moderator_reply(
+            content, set(self.by_name), {p.name for p in self.troupe}, self.last_speaker
+        )
+        if not decision.found_next:  # unparseable reply: fall back to fair rotation
+            decision.nxt = self._least_recent_speaker()
+        return decision
 
-        names = self.by_name.keys()
-        nxt: str | None = None
-        nudge: str | None = None
-        found_next = False
-        for line in content.splitlines():
-            upper = line.upper()
-            if upper.startswith("NEXT:"):
-                found_next = True
-                val = line.split(":", 1)[1].strip().strip('."* ')
-                # NOBODY, the last speaker, and unknown names all mean "no one valid"
-                nxt = val if val in names and val != self.last_speaker else None
-            elif upper.startswith("NUDGE:"):
-                val = line.split(":", 1)[1].strip()
-                nudge = None if val in ("", "-") else val
+    def _apply_switch(self, departing: str, arriving: str, force: bool = False) -> bool:
+        """Swap one seat for someone in the café. Returns False on anything fishy:
+        unknown names, already seated, too soon since the last switch (unless a
+        human forces it with /seat), or evicting the newest arrival."""
+        if not self.troupe or departing not in self.by_name:
+            return False
+        candidate = next((p for p in self.troupe if p.name == arriving), None)
+        if candidate is None or arriving in self.by_name:
+            return False
+        # the first switch may happen right away — the right cast for the
+        # opening topic shouldn't have to wait; after that, the full gap
+        # keeps the table stable
+        gap = MIN_SWITCH_GAP if self._last_switch_in else 0
+        if not force and self.turns_since_switch < gap:
+            return False
+        if departing == self._last_switch_in:
+            return False
+        idx = next(i for i, p in enumerate(self.personas) if p.name == departing)
+        self.personas = tuple(candidate if i == idx else p for i, p in enumerate(self.personas))
+        self.by_name = {p.name: p for p in self.personas}
+        self._last_switch_in = arriving
+        self.turns_since_switch = 0
+        self._sitrep = (arriving, departing)
+        return True
 
-        if not found_next:  # unparseable reply: fall back to fair rotation
-            nxt = self._least_recent_speaker()
-        return nxt, nudge
+    # -- user commands (/seat, /cast) -------------------------------------------
+
+    async def _handle_command(self, raw: str) -> None:
+        parts = raw[1:].split()
+        if not parts:
+            return
+        cmd, args = parts[0].lower(), parts[1:]
+        if cmd == "seat":
+            await self._cmd_seat(args)
+        elif cmd == "cast":
+            await self._cmd_cast(args)
+        else:
+            await self.sink.dim(
+                f"· unknown command /{cmd} — try /seat Name [for Seat] or /cast pack"
+            )
+
+    async def _cmd_seat(self, args: list[str]) -> None:
+        if not self.troupe:
+            await self.sink.dim("· this table has a fixed cast — /seat works with the troupe")
+            return
+        if not args:
+            waiting = ", ".join(p.name for p in self.troupe if p.name not in self.by_name)
+            await self.sink.dim(f"· in the café tonight: {waiting or 'everyone is seated'}")
+            return
+        match = next((p for p in self.troupe if p.name.lower() == args[0].lower()), None)
+        if match is None:
+            await self.sink.dim(f"· no one called {args[0]} here tonight")
+            return
+        if match.name in self.by_name:
+            await self.sink.dim(f"· {match.name} is already at the table")
+            return
+        if len(args) >= 3 and args[1].lower() == "for":
+            departing = next(
+                (p.name for p in self.personas if p.name.lower() == args[2].lower()), None
+            )
+            if departing is None:
+                await self.sink.dim(f"· no seat called {args[2]} at the table")
+                return
+        else:
+            departing = self._least_recent_speaker()
+        if self._apply_switch(departing, match.name, force=True):
+            await self.sink.dim(
+                f"☕ {departing} settles their tab · {match.name} slides into the booth"
+            )
+            self.log.note(f"{departing} settles their tab · {match.name} slides into the booth")
+
+    async def _cmd_cast(self, args: list[str]) -> None:
+        if not args:
+            await self.sink.dim("· /cast needs a pack name — try /cast traders")
+            return
+        try:
+            lineup = load_personas(args[0])
+        except SystemExit as e:
+            await self.sink.dim(f"· {e}")
+            return
+        missing = missing_keys(lineup.personas, lineup.moderator or MODERATOR_MODEL)
+        if missing:
+            await self.sink.dim(f"· can't seat that cast — missing keys: {', '.join(missing)}")
+            return
+        self.personas = lineup.personas
+        self.by_name = {p.name: p for p in self.personas}
+        self.troupe = lineup.troupe
+        if lineup.moderator:
+            self.moderator_model = lineup.moderator
+        if lineup.brief:
+            self.brief = lineup.brief
+        if lineup.mode:
+            self.mode = lineup.mode
+        if lineup.speed:
+            self.speed = lineup.speed
+        self.consecutive_passes = 0
+        self.turns_since_switch = 0
+        self._last_switch_in = None
+        names = " · ".join(p.name for p in self.personas)
+        await self.sink.dim(f"☕ the evening's cast changes — {names} take the table")
+        self.log.note(f"the cast changes: {names} take the table")
 
     def _least_recent_speaker(self) -> str:
         last_seen = {p.name: -1 for p in self.personas}
@@ -466,6 +636,17 @@ class Engine:
                 msgs[-1]["content"] += "\n\n" + content
             else:
                 msgs.append({"role": role, "content": content})
+        if self._sitrep and persona.name == self._sitrep[0]:
+            departing = self._sitrep[1]
+            missed = self.summary or " · ".join(
+                f"{e.speaker}: {e.text[:120]}" for e in self.transcript[-3:]
+            )
+            sitrep = (
+                f"You're joining mid-conversation, taking {departing}'s seat. "
+                f"What you missed: {missed}. Bring your own angle."
+            )
+            nudge = sitrep + (f" Also: {nudge}" if nudge else "")
+            self._sitrep = None
         if nudge:
             msgs.append(
                 {

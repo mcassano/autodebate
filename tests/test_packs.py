@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validate every built-in persona pack: loads cleanly, well-formed, unique
-names, parseable model specs. No API calls — safe for CI.
+names and colors, parseable model specs. No API calls, no provider probes —
+safe for CI.
 
     python tests/test_packs.py
 """
@@ -14,19 +15,26 @@ def main() -> int:
     failures = []
     for name in available_packs():
         try:
-            lineup = load_personas(name)
-            personas = lineup.personas
-            assert 2 <= len(personas) <= 6, f"{len(personas)} personas"
-            names = [p.name for p in personas]
+            # apply_availability=False: validate the pack itself, not this machine
+            lineup = load_personas(name, apply_availability=False)
+            people = lineup.troupe or lineup.personas
+            assert 2 <= len(people) <= 12, f"{len(people)} personas"
+            names = [p.name for p in people]
             assert len(set(names)) == len(names), f"duplicate names: {names}"
-            colors = [p.color for p in personas]
+            colors = [p.color for p in people]
             assert len(set(colors)) == len(colors), f"duplicate colors: {colors}"
-            for p in personas:
+            assert 2 <= len(lineup.personas) <= len(people), "bad initial seats"
+            for p in people:
                 assert p.style.strip() and len(p.archetype) >= 80, f"{p.name} is thin"
                 parse_spec(p.model)
             if lineup.moderator:
                 parse_spec(lineup.moderator)
-            print(f"  {name:12s} {' · '.join(names)}")
+            kind = (
+                f"troupe of {len(people)}, {len(lineup.personas)} seats"
+                if lineup.troupe
+                else "fixed"
+            )
+            print(f"  {name:12s} ({kind}) {' · '.join(p.name for p in lineup.personas)}")
         except (AssertionError, SystemExit) as e:
             failures.append((name, e))
             print(f"  {name:12s} FAILED: {e}")

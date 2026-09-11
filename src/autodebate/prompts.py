@@ -99,10 +99,27 @@ def moderator_prompt(
     roster: tuple[Persona, ...],
     brief: str | None = None,
     mode: str = "debate",
+    troupe: tuple[Persona, ...] = (),
 ) -> str:
     """The invisible moderator decides who speaks next, and whispers a nudge."""
     names = ", ".join(p.name for p in roster)
     format_line = f"Table format: {brief}\n\n" if brief else ""
+    cafe = [p for p in troupe if p not in roster]
+    switch_block = ""
+    if cafe:
+        cafe_list = "; ".join(f"{p.name} ({p.style})" for p in cafe)
+        switch_block = (
+            f"\nAlso in the café tonight, not currently seated: {cafe_list}.\n"
+            "If someone in the café is clearly better suited to the CURRENT topic "
+            "than a current seat — whether the subject just changed or has been this "
+            "way all along — you may rotate them in.\n"
+        )
+    switch_format = (
+        "SWITCH: <seated name> -> <café name>   (optional — include only when a "
+        "switch would clearly improve the table for THIS topic; never on a whim)\n"
+        if cafe
+        else ""
+    )
     return dedent(f"""\
         You are the invisible moderator of a coffee-shop conversation between {names}
         and a human (shown as "You"). Their shared goal: rigorous, challenging
@@ -118,11 +135,12 @@ def moderator_prompt(
           challenge or advance the last point.
         - If the exchange has reached natural closure or is circling, pick NOBODY.
         - Never pick "You" — the human joins in when they want to.
-
+        {switch_block}
         Reply in exactly this format:
         NEXT: <one of {names}, or NOBODY>
         NUDGE: <one short sentence whispered to that speaker about what would be most
-        valuable from them now, or ->""")
+        valuable from them now, or ->
+        {switch_format}""")
 
 
 def summary_prompt(existing: str, convo: str) -> str:
