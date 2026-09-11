@@ -132,6 +132,8 @@ def check_dials(mode: str, speed: str) -> None:
 
 OPENROUTER_KEY = os.environ.get("OPEN_ROUTER_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
 BRAVE_KEY = os.environ.get("BRAVE_SEARCH_API_KEY")
+FRED_KEY = os.environ.get("FRED_API_KEY")
+TMDB_KEY = os.environ.get("TMDB_API_KEY")
 
 
 def _key_present(key_env: str) -> bool:

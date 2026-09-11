@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0 — 2026-09-10
+
+Three new keyless tools, two more that unlock with a free key.
+
+- **New, no key needed**: `wikipedia_search` (background and definitions),
+  `world_bank_indicator` (GDP, inflation, unemployment, population by
+  country), and `hn_search` (what the tech crowd is discussing).
+- **New, optional key**: `fred_series` (US Federal Reserve economic data —
+  `FRED_API_KEY`) and `tmdb_search` (film lookups — `TMDB_API_KEY`), joining
+  `brave_search` as tools that quietly opt in when their key is set.
+- Quickstart now needs only `OPEN_ROUTER_API_KEY` — the other eight tools
+  either need no key or are clearly optional in `.env.example`.
+
 ## 0.4.0 — 2026-09-10
 
 The cast now follows the conversation.

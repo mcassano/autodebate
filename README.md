@@ -27,8 +27,10 @@ Swap any seat by editing `PERSONAS` in `src/autodebate/config.py`.
 
 ## Quickstart
 
-You need two keys (both have free tiers):
-[OpenRouter](https://openrouter.ai/keys) and [Brave Search API](https://brave.com/search/api/).
+You need one key: [OpenRouter](https://openrouter.ai/keys) (free tier available).
+Wikipedia, World Bank data, Hacker News, arXiv, and stock quotes work out of
+the box; live web search, US econ data, and film lookups unlock with their own
+free keys — see `.env.example`.
 
 ```bash
 git clone https://github.com/mcassano/autodebate.git
@@ -86,10 +88,11 @@ question already on it. The session's markdown transcript is served at `/transcr
 
 [![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template)
 
-Or manually: New Project → Deploy from GitHub repo → set two environment variables
-(`OPEN_ROUTER_API_KEY`, `BRAVE_SEARCH_API_KEY`; optionally `AUTODEBATE_TOPIC`) →
-Deploy. `railway.toml` in this repo handles the rest. Note the filesystem is
-ephemeral, so `/transcript` is the way to read a session back.
+Or manually: New Project → Deploy from GitHub repo → set the environment variable
+`OPEN_ROUTER_API_KEY` (optionally `BRAVE_SEARCH_API_KEY`, `FRED_API_KEY`,
+`TMDB_API_KEY`, `AUTODEBATE_TOPIC`) → Deploy. `railway.toml` in this repo
+handles the rest. Note the filesystem is ephemeral, so `/transcript` is the
+way to read a session back.
 
 ## Bring your own backend
 
@@ -185,7 +188,7 @@ src/autodebate/
   config.py     # personas, providers, pack loading — start here
   prompts.py    # every word spoken to the models
   engine.py     # the conversation loop (UI-agnostic, drives a Sink)
-  tools.py      # the six tools; add your own in ~15 lines
+  tools.py      # web search, wiki, econ data, tickers, HN, arXiv, films — add your own in ~15 lines
   packs/        # persona packs (stoics, boardroom, lab, arena, locals)
   tui.py        # Textual front end
   cli.py        # headless stdout front end
