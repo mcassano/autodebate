@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -322,6 +322,37 @@ def load_personas(spec: str | None, apply_availability: bool = True) -> Lineup:
         return Lineup(personas=personas, out_tonight=tuple(out), **common)
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
         sys.exit(f"Invalid persona pack {path}: {e}")
+
+
+def apply_troupe_availability(lineup: Lineup) -> Lineup:
+    """Re-resolve a lineup loaded with apply_availability=False against live
+    provider reachability. Callers that build a lineup at import time (the
+    web app's module-level `create_app()`) must load with
+    apply_availability=False and call this instead at actual server start —
+    same reason check_keys is deferred to lifespan: a keyless import must
+    never crash."""
+    if not lineup.troupe:
+        available, out = _split_by_reachability(lineup.personas)
+        if not available:
+            sys.exit(
+                f"none of {', '.join(p.name for p in lineup.personas)} are reachable "
+                "— check providers/keys"
+            )
+        return replace(lineup, personas=tuple(available), out_tonight=tuple(out))
+
+    seats = len(lineup.personas)
+    available, out = _split_by_reachability(lineup.troupe)
+    if len(available) < 2:
+        sys.exit(
+            "fewer than 2 of the troupe are reachable tonight "
+            f"(out: {', '.join(out) or 'none'}) — check providers/keys"
+        )
+    return replace(
+        lineup,
+        personas=tuple(available[:seats]),
+        troupe=tuple(available),
+        out_tonight=tuple(out),
+    )
 
 
 def missing_keys(personas: tuple[Persona, ...], moderator: str) -> list[str]:

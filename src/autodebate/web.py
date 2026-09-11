@@ -29,6 +29,7 @@ from .config import (
     MODERATOR_MODEL,
     Lineup,
     Persona,
+    apply_troupe_availability,
     check_dials,
     check_keys,
     load_personas,
@@ -97,8 +98,8 @@ class WebSink:
 
 def create_app(lineup: Lineup | None = None) -> FastAPI:
     if lineup is None and os.environ.get("AUTODEBATE_PERSONAS"):
-        lineup = load_personas(os.environ["AUTODEBATE_PERSONAS"])
-    lineup = lineup or load_personas(None)
+        lineup = load_personas(os.environ["AUTODEBATE_PERSONAS"], apply_availability=False)
+    lineup = lineup or load_personas(None, apply_availability=False)
     mode = os.environ.get("AUTODEBATE_MODE") or lineup.mode or DEFAULT_MODE
     speed = os.environ.get("AUTODEBATE_SPEED") or lineup.speed or DEFAULT_SPEED
     check_dials(mode, speed)
@@ -118,8 +119,15 @@ def create_app(lineup: Lineup | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # fail fast at server start (never at import) if providers are keyless
-        check_keys(lineup.personas, lineup.moderator or MODERATOR_MODEL)
+        nonlocal lineup
+        # provider reachability + key checks happen at server start, never at
+        # import — a keyless `import autodebate.web` must never crash
+        lineup = apply_troupe_availability(lineup)
+        engine.personas = lineup.personas
+        engine.by_name = {p.name: p for p in engine.personas}
+        engine.troupe = lineup.troupe
+        engine.out_tonight = lineup.out_tonight
+        check_keys(engine.personas, lineup.moderator or MODERATOR_MODEL)
         quiet_asyncgen_noise()
         task = asyncio.create_task(engine.run())
         topic = os.environ.get("AUTODEBATE_TOPIC")
@@ -153,7 +161,7 @@ def create_app(lineup: Lineup | None = None) -> FastAPI:
             "paused": not engine.running.is_set(),
             "personas": [
                 {"name": p.name, "color": p.color, "model": p.model, "style": p.style}
-                for p in lineup.personas
+                for p in engine.personas
             ],
         }
 
